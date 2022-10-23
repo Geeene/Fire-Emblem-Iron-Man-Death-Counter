@@ -193,41 +193,41 @@ class Application(object):
         event_handled = False
 
         if self.plusClick.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("main_size", True, 1, 1000)
+            event_handled = self.handle_plus_minus("main_size", True, 1, 1000)
             self.resized_images = []  # empty the resized images cache, the image size has changed.
         elif self.minusClick.collidepoint(clicked_pos):
             self.resized_images = []  # empty the resized images cache, the image size has changed.
-            event_handled &= self.handle_plus_minus("main_size", False, 1, 1000)
+            event_handled = self.handle_plus_minus("main_size", False, 1, 1000)
         elif self.output_x_plus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("display_x", True, 1, 2500)
+            event_handled = self.handle_plus_minus("display_x", True, 1, 2500)
         elif self.output_x_minus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("display_x", False, 1, 2500)
+            event_handled = self.handle_plus_minus("display_x", False, 1, 2500)
         elif self.output_y_plus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("display_y", True, 1, 2500)
+            event_handled = self.handle_plus_minus("display_y", True, 1, 2500)
         elif self.output_y_minus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("display_y", False, 1, 2500)
+            event_handled = self.handle_plus_minus("display_y", False, 1, 2500)
         elif self.red_plus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_red", True, 0, 255)
+            event_handled = self.handle_plus_minus("bg_red", True, 0, 255)
         elif self.red_minus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_red", False, 0, 255)
+            event_handled = self.handle_plus_minus("bg_red", False, 0, 255)
         elif self.green_plus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_green", True, 0, 255)
+            event_handled = self.handle_plus_minus("bg_green", True, 0, 255)
         elif self.green_minus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_green", False, 0, 255)
+            event_handled = self.handle_plus_minus("bg_green", False, 0, 255)
         elif self.blue_plus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_blue", True, 0, 255)
+            event_handled = self.handle_plus_minus("bg_blue", True, 0, 255)
         elif self.blue_minus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_blue", False, 0, 255)
+            event_handled = self.handle_plus_minus("bg_blue", False, 0, 255)
         elif self.opacity_plus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_alpha", True, 0, 255)
+            event_handled = self.handle_plus_minus("bg_alpha", True, 0, 255)
         elif self.opacity_minus.collidepoint(clicked_pos):
-            event_handled &= self.handle_plus_minus("bg_alpha", False, 0, 255)
+            event_handled = self.handle_plus_minus("bg_alpha", False, 0, 255)
 
         if not event_handled:
-            event_handled &= self.handle_game_change(self.settings["current_game"], clicked_pos)
+            event_handled = self.handle_game_change(self.settings["current_game"], clicked_pos)
 
         if not event_handled:
-            self.handle_portrait_clicked(clicked_pos)
+            event_handled = self.handle_portrait_clicked(clicked_pos)
 
         if event_handled:
             # rebuild the main display, the operator has done something.
@@ -241,7 +241,8 @@ class Application(object):
             elif i.collide.collidepoint(my_pos) and i.selected:  # Unmarks the character from being dead
                 i.selected = False
                 self.selected_characters.remove(i.name)
-                self.resized_images.pop(i.name)
+                if i.name in self.resized_images:
+                    self.resized_images.pop(i.name)
         self.image_changed = True
 
         # Rewrites the list of dead characters with the updated information.
@@ -249,6 +250,8 @@ class Application(object):
             for line in self.selected_characters:
                 f.write(line)
                 f.write('\n')
+
+        return True
 
     # gets all subfolders, these are the vailable games
     def initialize_game_list(self):
