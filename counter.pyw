@@ -14,42 +14,52 @@ class Char:  # This class is used to represent each character.
         return f"Char: {self.name}, collide: {self.collide}, selected: {self.selected}, img: {self.img}"
 
 
+# The Main class of the app, bundles rendering and logical operations
 class Application(object):
-    settings = {}
-    images = {}
+    settings = {}  # dictionary with the settings
+    images = {}  # cache map for the images of the GUI
+    resized_images = {}  # cache map for the character images displayed in the GUI
     current_game_folder = ""  # What folder the program will use images from
-    game_names = []  # All the subfolders
-    settings_file_name = "settings.txt"
-    screen = None
+    game_names = []  # All the subfolders, i.e. available games
+    settings_file_name = "settings.txt"  # file with the users settings
 
+    # Main Screen Settings
+    screen = None
     window_width = 400
     window_height = 830
     picture_size = 50
-    resized_images = {}
 
+    # Collections for display logic
     collision_list = []
     selected_characters = []
     character_matrix = [[]]
     char_dict = {}
 
+    # Boolean indicating if the output file needs to be re-rendered
     image_changed = True
 
     # Used to check if these keys are being held by the user.
     control_held = False
     shift_held = False
 
+    # called to initialize the application when it's first started
     def __init__(self):
+        # load the images into the cache dict
         self.__initialize_images()
-
         # Start out by initializing our default settings
         self.init_default_settings()
         # afterwards override the settings from the file
         self.load_settings()
+        # load the available games
         self.initialize_game_list()
+        # select the current game from the settings
         self.current_game_folder = self.game_names[self.settings["current_game"]]
+        # build the character matrix in the GUI
         self.rebuild_character_matrix(self.current_game_folder)
+        # build the window
         self.__build_main_display()
 
+    # main loop that handles user inputs. Sleeps for a small time after every loop to save resources
     def loop(self):
         time_to_sleep = .01
         done = False
@@ -120,11 +130,16 @@ class Application(object):
 
         self.opacity_minus = screen.blit(self.images["small_minus"], (295, 800))
         self.opacity_plus = screen.blit(self.images["small_plus"], (325, 800))
+
+        # Add the characters of the current game to the main screen
         self.show_characters_in_window(screen)
+        # render the output image
         self.render_image()
         self.screen = screen
+        # actually show the window to the user
         pygame.display.flip()
 
+    # adds the collision images to the window for the characters in the character matrix
     def show_characters_in_window(self, screen):
         if screen is None:
             return
@@ -139,15 +154,16 @@ class Application(object):
                 if char.selected:  # Displays an "x" over any character who has been marked as dead.
                     screen.blit(self.images["rip"], [self.picture_size * i, j * self.picture_size])
 
+    # render the output image
     def render_image(self):
         main_size = self.settings["main_size"]
         i, j = 0, 0
         max_per_row = self.settings["display_x"] // main_size
         for c in self.selected_characters:
             char = self.char_dict[c]
-            if char.name in self.resized_images:
+            if char.name in self.resized_images:  # if the char is already in the resized images cache then load it
                 resized_image = self.resized_images[char.name]
-            else:
+            else:  # if character not in resized images cache, resize it and add it so we only resize once
                 resized_image = pygame.transform.scale(char.img, (main_size, main_size))
                 self.resized_images[char.name] = resized_image
 
@@ -159,7 +175,7 @@ class Application(object):
 
         if self.image_changed:
             self.image_changed = False  # prevents the image from saving again until another change is made
-            while True:
+            while True:  # loop to ensure that the image rendering doesn't accidentally get interrupted
                 try:
                     pygame.image.save(self.rendered_image, "output.png")
                     break
@@ -172,11 +188,15 @@ class Application(object):
         self.control_held = keys[pygame.K_LCTRL]
         self.shift_held = keys[pygame.K_LSHIFT]
 
-        # Plus/Minus Clicks
+        # keep track of if the current event was handled so we don't have to
+        # iterate through the chars to know if one was clicked. You can't click on two different buttons in one event.
         event_handled = False
+
         if self.plusClick.collidepoint(clicked_pos):
             event_handled &= self.handle_plus_minus("main_size", True, 1, 1000)
+            self.resized_images = []  # empty the resized images cache, the image size has changed.
         elif self.minusClick.collidepoint(clicked_pos):
+            self.resized_images = []  # empty the resized images cache, the image size has changed.
             event_handled &= self.handle_plus_minus("main_size", False, 1, 1000)
         elif self.output_x_plus.collidepoint(clicked_pos):
             event_handled &= self.handle_plus_minus("display_x", True, 1, 2500)
@@ -209,7 +229,9 @@ class Application(object):
         if not event_handled:
             self.handle_portrait_clicked(clicked_pos)
 
-        self.__build_main_display()
+        if event_handled:
+            # rebuild the main display, the operator has done something.
+            self.__build_main_display()
 
     def handle_portrait_clicked(self, my_pos):
         for i in self.collision_list:  # Checks if the user has clicked on a character.
@@ -228,12 +250,14 @@ class Application(object):
                 f.write(line)
                 f.write('\n')
 
+    # gets all subfolders, these are the vailable games
     def initialize_game_list(self):
         # Taken from https://stackoverflow.com/questions/141291/how-to-list-only-top-level-directories-in-python
         root, dir_names, filenames = next(os.walk('.'))
         if len(dir_names) > 0:
             self.game_names = dir_names.copy()
 
+    # load the images into the cache
     def __initialize_images(self):
         self.images["plus"] = pygame.image.load("plus.png")
         self.images["minus"] = pygame.image.load("minus.png")
@@ -252,6 +276,7 @@ class Application(object):
         self.images["small_off"] = pygame.transform.scale(self.images["off"], (15, 15))
         self.images["rip"] = pygame.transform.scale(pygame.image.load("x.png"), (self.picture_size, self.picture_size))
 
+    # init default settings incase user doesn't have a settings.txt
     def init_default_settings(self):
         self.settings["main_size"] = 100
         self.settings["current_game"] = 0
@@ -262,6 +287,7 @@ class Application(object):
         self.settings["display_x"] = 400
         self.settings["display_y"] = 400
 
+    # load the settings.txt and add it to the current settings
     def load_settings(self):  # Loads the settings from the settings file.
         with open(self.settings_file_name, "r") as settingsFile:
             try:
@@ -274,6 +300,7 @@ class Application(object):
                 self.settings["display_x"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
                 self.settings["display_y"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
             except IndexError:
+                # if something went wrong, write the current settings
                 self.write_settings()
 
     # Used when the program needs to update the settings file.
@@ -288,6 +315,8 @@ class Application(object):
             f.write(f"imgx: {self.settings['display_x']}\n")
             f.write(f"imgy: {self.settings['display_y']}\n")
 
+    # handles the game change, selects the new game based on what arrow was clicked
+    # rebuilds the character_matrix and updates the settings
     def handle_game_change(self, game_index, my_pos):
         if self.previous_game_arrow.collidepoint(my_pos):  # Goes to the previous directory in the folder.
             game_index -= 1
@@ -310,6 +339,8 @@ class Application(object):
         self.write_settings()
         return True
 
+    # Adds all the chars of the current game to a Matrix that will be used to render the screen
+    # if the characters are dead, then it sets the selected flag on the Char
     def rebuild_character_matrix(self, new_game):
         self.selected_characters = []
         self.resized_images = {}
