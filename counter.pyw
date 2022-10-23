@@ -1,5 +1,6 @@
 import os
 import pygame
+import time
 
 
 class Char:  # This class is used to represent each character.
@@ -50,6 +51,7 @@ class Application(object):
         self.__build_main_display()
 
     def loop(self):
+        time_to_sleep = .01
         done = False
         while not done:
             click_position = pygame.mouse.get_pos()
@@ -59,6 +61,7 @@ class Application(object):
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Checks what the user clicked.
                         self.handle_mouse_click(click_position)
+            time.sleep(time_to_sleep)
 
     def __build_main_display(self):
         screen = pygame.display.set_mode((self.window_width, self.window_height))
