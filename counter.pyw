@@ -1,444 +1,374 @@
-#This file configures the what display file shows.
-import os, pygame
-from pygame.locals import *
-pygame.init()
-directory = "" #What folder the program will use images from
-files = [] #The files in said folder
+import os
+import pygame
 
-#default settings
-mainSize = 100
-choice = 0
-color = [161,199,150,255]
 
-saveImage = True
+class Char:  # This class is used to represent each character.
+    def __init__(self, img, name, selected=False):
+        self.img = img  # The image of the character
+        self.selected = selected  # Whether or not the user has marked the character as dead.
+        self.collide = 0  # Set to 0 at first, later and used to check if the user clicked the image.
+        self.name = name  # File name of the character
 
-#loading images
-plus = pygame.image.load("plus.png")
-minus = pygame.image.load("minus.png")
-left = pygame.image.load("left.png")
-right = pygame.image.load("right.png")
-off = pygame.image.load("off.png")
-on = pygame.image.load('on.png')
+    def __repr__(self):
+        return f"Char: {self.name}, collide: {self.collide}, selected: {self.selected}, img: {self.img}"
 
-icon = pygame.image.load('icon.ico')
-pygame.display.set_icon(icon)
 
-smallplus = pygame.transform.scale(plus, (15,15)) #for changing BG color
-smallminus = pygame.transform.scale(minus, (15,15))
+class Application(object):
+    settings = {}
+    images = {}
+    current_game_folder = ""  # What folder the program will use images from
+    game_names = []  # All the subfolders
+    settings_file_name = "settings.txt"
+    screen = None
 
-smallon = pygame.transform.scale(on, (15,15)) #for toggling PNG saving
-smalloff = pygame.transform.scale(off, (15,15))
+    window_width = 400
+    window_height = 830
+    picture_size = 50
+    resized_images = {}
 
-#Lists all the folders in the folder the program is located in.
-for root, dirnames, filenames in os.walk('.'): #Taken from https://stackoverflow.com/questions/141291/how-to-list-only-top-level-directories-in-python
-  if len(dirnames) > 0:
-    files = dirnames.copy()
-    break
+    collision_list = []
+    selected_characters = []
+    character_matrix = [[]]
+    char_dict = {}
 
-class Char: #This class is used to represent each character.
-  def __init__(self, img, name):
-    self.img = img #The image of the character
-    self.selected = False #Whether or not the user has marked the character as dead.
-    self.collide = 0 #Set to 0 at first, later and used to check if the user clicked the image.
-    self.name =  name #File name of the character
+    image_changed = True
 
-screenx = 400
-screeny = 830
+    # Used to check if these keys are being held by the user.
+    control_held = False
+    shift_held = False
 
-displayx = 400
-displayy = 400
+    def __init__(self):
+        self.__initialize_images()
 
-#Used when the program needs to update the settings file.
-def writeSettings(x):
-  x.write("size: " + str(mainSize))
-  x.write("\n")
-  x.write("game: " + str(choice))
-  x.write("\n")
-  x.write("bgred: " + str(color[0]))
-  x.write("\n")
-  x.write("bggreen: " + str(color[1]))
-  x.write("\n")
-  x.write("bgblue: " + str(color[2]))
-  x.write("\n")
-  x.write("opacity: " + str(color[3]))
-  x.write("\n")
-  x.write("imgx: " + str(displayx))
-  x.write("\n")
-  x.write("imgy: " + str(displayy))
-  x.write("\n")
+        # Start out by initializing our default settings
+        self.init_default_settings()
+        # afterwards override the settings from the file
+        self.load_settings()
+        self.initialize_game_list()
+        self.current_game_folder = self.game_names[self.settings["current_game"]]
+        self.rebuild_character_matrix(self.current_game_folder)
+        self.__build_main_display()
 
-def changeSettings(): #Loads the settings from the settings file.
-  while True:
-    try:
-      settingsFile = open('settings.txt')
-      settings = settingsFile.readlines()
-      settingsFile.close()
-      s = settings[0].split(":")[1]
-      g = settings[1].split(":")[1]
-      r = settings[2].split(":")[1]
-      gr = settings[3].split(":")[1]
-      b = settings[4].split(":")[1]
-      o = settings[5].split(":")[1]
-      x = settings[6].split(":")[1]
-      y = settings[7].split(":")[1]
-      break
-    except IndexError:
-      with open('settings.txt', 'w') as f: #resets to default settings if the text file is formatted incorrectly
-        writeSettings(f)
+    def loop(self):
+        done = False
+        while not done:
+            click_position = pygame.mouse.get_pos()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Checks what the user clicked.
+                        self.handle_mouse_click(click_position)
 
-  s = s.strip(" ") #Getting rid of unecessary characters
-  g = g.strip(" ")
-  r = r.strip(" ")
-  gr = gr.strip(" ")
-  b = b.strip(" ")
-  o = o.strip(" ")
-  x = x.strip(" ")
-  y = y.strip(" ")
+    def __build_main_display(self):
+        screen = pygame.display.set_mode((self.window_width, self.window_height))
+        screen.fill("black")
 
-  s = s.strip("\n")
-  g = g.strip("\n")
-  r = r.strip("\n")
-  gr = gr.strip("\n")
-  b = b.strip("\n")
-  x = x.strip("\n")
-  y = y.strip("\n")
+        pygame.display.set_caption("FE Death Counter")
+        font = pygame.font.SysFont("Times New Roman", 30, False, False)
+        pygame.font.SysFont("Times New Roman", 20, False, False)
 
-  s = int(s)
-  g = int(g)
-  r = int(r)
-  gr = int(gr)
-  b = int(b)
-  o = int(o)
-  x = int(x)
-  y = int(y)
+        self.rendered_image = pygame.Surface((self.settings["display_x"], self.settings["display_y"])) \
+            .convert_alpha()
+        self.rendered_image.fill(
+            (self.settings["bg_red"], self.settings["bg_green"], self.settings["bg_blue"], self.settings["bg_alpha"]))
 
-  return s,g, [r,gr,b, o], x, y
+        # Text
+        size_text = font.render("Char Size: " + str(self.settings["main_size"]), True, "white")
+        game_text = font.render(f"Game: {self.settings['current_game']}", True, "white")
+        image_text = font.render("Output Size", True, "white")
+        image_size_text = font.render(f'{self.settings["display_x"]} x {self.settings["display_y"]})', True, "white")
+        color_text = font.render("BG Color:", True, "white")
+        red_text = font.render(str(self.settings["bg_red"]), True, "red")
+        green_text = font.render(str(self.settings["bg_green"]), True, "green")
+        blue_text = font.render(str(self.settings["bg_blue"]), True, "blue")
+        opacity_text = font.render(str(self.settings["bg_alpha"]), True, "white")
 
-mainSize, choice, color, displayx, displayy = changeSettings()
-directory = files[choice] #Opens the folder of the game that the user has specified.
-dead = open(directory+'/dead.txt').readlines()
-for i in range(len(dead)):
-  dead[i] = dead[i].rstrip("\n")
-size = 50 #Size of the characters on this window.
-row = screenx / size #Amount of images that can fit on one row
+        # Displaying text and images
+        screen.blit(size_text, (0, 700))
+        screen.blit(game_text, (0, 650))
+        screen.blit(image_text, (215, 700))
+        screen.blit(image_size_text, (220, 730))
+        screen.blit(color_text, (0, 770))
+        screen.blit(red_text, (130, 770))
+        screen.blit(green_text, (185, 770))
+        screen.blit(blue_text, (240, 770))
+        screen.blit(opacity_text, (295, 770))
 
-rip = pygame.image.load("x.png")
-rip = pygame.transform.scale(rip, (size,size))
+        self.plusClick = screen.blit(self.images["plus"], (100, 740))
+        self.minusClick = screen.blit(self.images["minus"], (50, 740))
+        self.previous_game_arrow = screen.blit(self.images["left"], (200, 660))
+        self.next_game_arrow = screen.blit(self.images["right"], (250, 660))
 
-def newGame(d): #This function is used whenever the user wants to switch to a different game folder. It opens the appropriate directory and puts the contents into a list.
-  dead = []
-  charimg = []
-  s = []
-  char = os.listdir(d)
-  try:
-    deadlist = open(d+'/dead.txt',"r").readlines() #List of the dead characters.
-  except FileNotFoundError: #Creates dead.txt if it doesn't exist in the current folder.
-    deadlist = open(d+'/dead.txt',"w+").readlines()
-  for i in range(len(deadlist)): #Goes through deadlist and removes the new line characters.
-    deadlist[i] = deadlist[i].rstrip("\n")
+        self.output_x_minus = screen.blit(self.images["small_minus"], (220, 760))
+        self.output_x_plus = screen.blit(self.images["small_plus"], (240, 760))
 
-  for i in char: #Removes any files in the directory that aren't png or jpg files from the list.
-    if not i.endswith(".png") and not i.endswith(".jpg"):
-      char.remove(i)
+        self.output_y_minus = screen.blit(self.images["small_minus"], (300, 760))
+        self.output_y_plus = screen.blit(self.images["small_plus"], (320, 760))
 
-  z = 0 #Represents the row number in the clist array.
-  clist = [[]]
+        self.red_minus = screen.blit(self.images["small_minus"], (130, 800))
+        self.red_plus = screen.blit(self.images["small_plus"], (160, 800))
 
-  for i in range(len(char)): #Converts the char list into a 2D array called clist.
-    if i % row == 0 and i != 0: 
-      z += 1
-      clist.append([])
-    clist[z].append(char[i])
+        self.green_minus = screen.blit(self.images["small_minus"], (185, 800))
+        self.green_plus = screen.blit(self.images["small_plus"], (210, 800))
 
-  for j in range(len(clist)): #Converts the clist into a 2D array of instances of the Char class.
-    charimg.append([]) #Charimg is a 2D array of instances of the "Char" class that will store information about them, like if they are dead or not and their image.
-    for i in range(len(clist[j])):
-      x = Char(pygame.image.load(d+"/"+clist[j][i]), clist[j][i]) #Creates an instance of the Char class with the character's file name and it's path.
-      if x.name in deadlist: #Checks if the character's file name is in deadlist, and if so adds the instance to a new list called dead.
-        dead.append(x)
-      x.img = pygame.transform.scale(x.img, (size,size)) #Resizes the character's image to the proper size.
-      charimg[j].append(x) #Adds the instance for the character to the charimg list.
-  for i in char: #Goes through the list of characters and the list of dead ones. Any character that is in the list of dead ones is added to the list of selected characters and marked as selected.
-    for j in dead:
-      if j.name == i:
-        s.append(j.name)
-        j.selected = True
-  return char, clist, charimg, dead, s
+        self.blue_minus = screen.blit(self.images["small_minus"], (240, 800))
+        self.blue_plus = screen.blit(self.images["small_plus"], (270, 800))
 
-characters, characterList, characterImages, characterDead, selected = newGame(directory)
-screen = pygame.display.set_mode((screenx,screeny))
+        self.opacity_minus = screen.blit(self.images["small_minus"], (295, 800))
+        self.opacity_plus = screen.blit(self.images["small_plus"], (325, 800))
+        self.show_characters_in_window(screen)
+        self.render_image()
+        self.screen = screen
+        pygame.display.flip()
 
-pygame.display.set_caption("FE Death Counter")
+    def show_characters_in_window(self, screen):
+        if screen is None:
+            return
+        size = self.picture_size
+        self.collision_list = []
+        # Goes through the list of characters and displays them as they are organized in the 2D array..
+        for j, row in enumerate(self.character_matrix):
+            for i, char in enumerate(row):
+                char.collide = screen.blit(pygame.transform.scale(char.img, (size, size)),
+                                           [self.picture_size * i, j * self.picture_size])
+                self.collision_list.append(char)
+                if char.selected:  # Displays an "x" over any character who has been marked as dead.
+                    screen.blit(self.images["rip"], [self.picture_size * i, j * self.picture_size])
 
-done = False
+    def render_image(self):
+        main_size = self.settings["main_size"]
+        i, j = 0, 0
+        max_per_row = self.settings["display_x"] // main_size
+        for c in self.selected_characters:
+            char = self.char_dict[c]
+            if char.name in self.resized_images:
+                resized_image = self.resized_images[char.name]
+            else:
+                resized_image = pygame.transform.scale(char.img, (main_size, main_size))
+                self.resized_images[char.name] = resized_image
 
-collidelist = []
+            self.rendered_image.blit(resized_image, [i * main_size, j * main_size])
+            i += 1
+            if i >= max_per_row:
+                i = 0
+                j += 1
 
-font = pygame.font.SysFont("Times New Roman", 30, False, False)
-smallFont = pygame.font.SysFont("Times New Roman", 20, False, False)
-plusClick = screen.blit(plus, (50,540))
-minusClick = screen.blit(minus, (100,540))
-leftClick = screen.blit(left, (150,460))
-rightClick = screen.blit(right, (200,460))
-togglePNGclick = screen.blit(on, (275,740))
+        if self.image_changed:
+            self.image_changed = False  # prevents the image from saving again until another change is made
+            while True:
+                try:
+                    pygame.image.save(self.rendered_image, "output.png")
+                    break
+                except pygame.error:
+                    continue
 
-#Used to check if these keys are being held by the user.
-controlHeld = False
-shiftHeld = False
+    def handle_mouse_click(self, clicked_pos):
+        # https://stackoverflow.com/questions/9961563/how-can-i-make-a-sprite-move-when-key-is-held-down
+        keys = pygame.key.get_pressed()
+        self.control_held = keys[pygame.K_LCTRL]
+        self.shift_held = keys[pygame.K_LSHIFT]
 
-#Used for the plus and minus icons.
-def plusMinus(x,add,min,max):
-  if controlHeld and shiftHeld:
-    if add:
-      x += 100
-    else:
-      x -= 100
-  elif controlHeld:
-    if add:
-      x += 10
-    else:
-      x -= 10
-  elif shiftHeld:
-    if add:
-      x += 50 
-    else:
-      x -= 50
-  else: 
-    if add:
-      x += 1
-    else:
-      x -= 1
-  if x < min:
-    x = min
-  if x > max:
-    x = max
-  return x
+        # Plus/Minus Clicks
+        event_handled = False
+        if self.plusClick.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("main_size", True, 1, 1000)
+        elif self.minusClick.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("main_size", False, 1, 1000)
+        elif self.output_x_plus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("display_x", True, 1, 2500)
+        elif self.output_x_minus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("display_x", False, 1, 2500)
+        elif self.output_y_plus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("display_y", True, 1, 2500)
+        elif self.output_y_minus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("display_y", False, 1, 2500)
+        elif self.red_plus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_red", True, 0, 255)
+        elif self.red_minus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_red", False, 0, 255)
+        elif self.green_plus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_green", True, 0, 255)
+        elif self.green_minus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_green", False, 0, 255)
+        elif self.blue_plus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_blue", True, 0, 255)
+        elif self.blue_minus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_blue", False, 0, 255)
+        elif self.opacity_plus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_alpha", True, 0, 255)
+        elif self.opacity_minus.collidepoint(clicked_pos):
+            event_handled &= self.handle_plus_minus("bg_alpha", False, 0, 255)
 
-deadimg = []
-dead = []
-two_d = [[]]
+        if not event_handled:
+            event_handled &= self.handle_game_change(self.settings["current_game"], clicked_pos)
 
-displayScreen = pygame.Surface((displayx,displayy))
-displayScreen = displayScreen.convert_alpha()
+        if not event_handled:
+            self.handle_portrait_clicked(clicked_pos)
 
-def screenChange(x): #Re-organizes the characters when the size of the screen is changed.
-  mainRow = int(x/mainSize) #How many characters fit in one row
-  j = 0
+        self.__build_main_display()
 
-  while("" in dead) :
-    dead.remove("")
+    def handle_portrait_clicked(self, my_pos):
+        for i in self.collision_list:  # Checks if the user has clicked on a character.
+            if i.collide.collidepoint(my_pos) and not i.selected:  # Marks the character as dead if it isn't already
+                i.selected = True
+                self.selected_characters.append(i.name)
+            elif i.collide.collidepoint(my_pos) and i.selected:  # Unmarks the character from being dead
+                i.selected = False
+                self.selected_characters.remove(i.name)
+                self.resized_images.pop(i.name)
+        self.image_changed = True
 
-  for i in range(len(dead)): #Used to display the dead characters. If there are too many in one row, it goes to the next row.
-    while True:
-      try:
-        if i % mainRow == 0 and i != 0:
-          j += 1
-          two_d.append([])
-        two_d[j].append(dead[i])
-        break
-      except ZeroDivisionError: #If the window is too small to fit one image, the program only allows one character in each row
-        mainRow = 1
+        # Rewrites the list of dead characters with the updated information.
+        with open(self.current_game_folder + '/dead.txt', 'w+') as f:
+            for line in self.selected_characters:
+                f.write(line)
+                f.write('\n')
 
-  for j in range(len(two_d)): #Makes another list of the properly sized images.
-    deadimg.append([])
-    for i in range(len(two_d[j])):
-      x = pygame.image.load(directory+"/"+two_d[j][i])
-      x = pygame.transform.scale(x, (mainSize,mainSize))
-      deadimg[j].append(x)
+    def initialize_game_list(self):
+        # Taken from https://stackoverflow.com/questions/141291/how-to-list-only-top-level-directories-in-python
+        root, dir_names, filenames = next(os.walk('.'))
+        if len(dir_names) > 0:
+            self.game_names = dir_names.copy()
 
-while not done: 
-  myPos = pygame.mouse.get_pos()
-  for event in pygame.event.get():
-    if event.type == pygame.QUIT:
-      done = True          
-    elif event.type == pygame.MOUSEBUTTONDOWN: 
-      if event.button == 1: #Checks what the user clicked.
-        saveImage = True
-        #Plus/Minus Clicks
-        if plusClick.collidepoint(myPos):
-          mainSize = plusMinus(mainSize,True,1,1000)
-          with open('settings.txt', 'w') as f: #Updates the settings file
-            #taken from https://www.pythontutorial.net/python-basics/python-write-text-file/
-            writeSettings(f)
-            
-        if minusClick.collidepoint(myPos):
-          mainSize = plusMinus(mainSize,False,1,1000)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if outputxplus.collidepoint(myPos):
-          displayx = plusMinus(displayx,True,1,2500)
-          with open('settings.txt', 'w') as f: #Updates the settings file
-            #taken from https://www.pythontutorial.net/python-basics/python-write-text-file/
-            writeSettings(f)
-        if outputxminus.collidepoint(myPos):
-          displayx = plusMinus(displayx,False,1,2500)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if outputyplus.collidepoint(myPos):
-          displayy = plusMinus(displayy,True,1,2500)
-          with open('settings.txt', 'w') as f: #Updates the settings file
-            #taken from https://www.pythontutorial.net/python-basics/python-write-text-file/
-            writeSettings(f)
-        if outputyminus.collidepoint(myPos):
-          displayy = plusMinus(displayy,False,1,2500)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if redplus.collidepoint(myPos):
-          color[0] = plusMinus(color[0],True,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if redminus.collidepoint(myPos):
-          color[0] = plusMinus(color[0],False,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if greenplus.collidepoint(myPos):
-          color[1] = plusMinus(color[1],True,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if greenminus.collidepoint(myPos):
-          color[1] = plusMinus(color[1],False,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if blueplus.collidepoint(myPos):
-          color[2] = plusMinus(color[2],True,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if blueminus.collidepoint(myPos):
-          color[2] = plusMinus(color[2],False,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if opacityplus.collidepoint(myPos):
-          color[3] = plusMinus(color[3],True,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        if opacityminus.collidepoint(myPos):
-          color[3] = plusMinus(color[3],False,0,255)
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        #Arrow Clicks
-        if leftClick.collidepoint(myPos): #Goes to the previous directory in the folder.
-          choice -= 1
-          if choice < 0: #If the index is too low, and if so loops back to the end of the list.
-            choice = len(files) - 1
-          directory = files[choice] #Changes the directory that the program is taking the characters from
-          characters, characterList, characterImages, characterDead, selected = newGame(directory) #Recreates the lists the program uses to now have the characters from the specified game.
-          with open('settings.txt', 'w') as f: 
-            writeSettings(f)
-        if rightClick.collidepoint(myPos): #Goes to the next directory in the folder.
-          choice += 1
-          if choice > len(files) - 1: #Checks if the index is at the end of the list, and if so loops to the beginning of the list.
-            choice = 0
-          directory = files[choice] #Changes the directory that the program is taking the characters from
-          characters, characterList, characterImages, characterDead, selected = newGame(directory) #Recreates the lists the program uses to now have the characters from the specified game.
-          with open('settings.txt', 'w') as f:
-            writeSettings(f)
-        for i in collidelist: #Checks if the user has clicked on a character.
-          if i.collide.collidepoint(myPos) and i.selected == False: #Marks the character as dead if it isn't already
-            i.selected = True
-            selected.append(i.name)
-            #Taken from https://www.pythontutorial.net/python-basics/python-write-text-file/
-            with open(directory+'/dead.txt', 'w') as f: #Retwrites the list of dead characters with the updated information.
-              for line in selected:
-                  f.write(line)
-                  f.write('\n')
-          elif i.collide.collidepoint(myPos) and i.selected == True: #Unmarks the character as dead
-            i.selected = False
-            selected.remove(i.name)
-            with open(directory+'/dead.txt', 'w') as f: #Retwrites the list of dead characters with the updated information.
-              for line in selected:
-                  f.write(line)
-                  f.write('\n')
+    def __initialize_images(self):
+        self.images["plus"] = pygame.image.load("plus.png")
+        self.images["minus"] = pygame.image.load("minus.png")
+        self.images["left"] = pygame.image.load("left.png")
+        self.images["right"] = pygame.image.load("right.png")
+        self.images["off"] = pygame.image.load("off.png")
+        # self.images["on"] = pygame.image.load("on.png")
 
-  collidelist = [] #Clears the list of the current locations of characters so that it can be updated later.
-  displayScreen = pygame.Surface((displayx,displayy))
-  displayScreen = displayScreen.convert_alpha()
-  screen.fill("black")
-  #screen.blit(displayScreen,(0,0))
-  displayScreen.fill((color[0],color[1],color[2],color[3]))
+        icon = pygame.image.load('icon.ico')
+        pygame.display.set_icon(icon)
 
-  keys = pygame.key.get_pressed()  #https://stackoverflow.com/questions/9961563/how-can-i-make-a-sprite-move-when-key-is-held-down
-  if keys[pygame.K_LCTRL]: #If the key is being held, it sets the relevant variable to True. Otherwise, it sets it to False.
-    controlHeld = True
-  else:
-    controlHeld = False
-  if keys[pygame.K_LSHIFT]:
-    shiftHeld = True
-  else:
-    shiftHeld = False
+        self.images["small_plus"] = pygame.transform.scale(self.images["plus"], (15, 15))  # for changing BG color
+        self.images["small_minus"] = pygame.transform.scale(self.images["minus"], (15, 15))
 
-  #Text
-  sizeText = font.render("Char Size: " + str(mainSize), True, "white")
-  gameText = font.render("Game: " + directory, True, "white")
-  imageText = font.render("Output Size", True, "white")
-  imageSizeText = font.render(str(displayx) + " x " + str(displayy), True, "white")
-  colorText  = font.render("BG Color:", True, "white")
-  redText  = font.render(str(color[0]), True, "red")
-  greenText  = font.render(str(color[1]), True, "green")
-  blueText  = font.render(str(color[2]), True, "blue")
-  opacityText  = font.render(str(color[3]), True, "white")
+        # self.images["small_on"] = pygame.transform.scale(self.images["on"], (15, 15))  # for toggling PNG saving
+        self.images["small_off"] = pygame.transform.scale(self.images["off"], (15, 15))
+        self.images["rip"] = pygame.transform.scale(pygame.image.load("x.png"), (self.picture_size, self.picture_size))
 
-  #Displaying text and images
+    def init_default_settings(self):
+        self.settings["main_size"] = 100
+        self.settings["current_game"] = 0
+        self.settings["bg_red"] = 161
+        self.settings["bg_green"] = 199
+        self.settings["bg_blue"] = 150
+        self.settings["bg_alpha"] = 255
+        self.settings["display_x"] = 400
+        self.settings["display_y"] = 400
 
-  screen.blit(sizeText, (0,700))
-  screen.blit(gameText, (0,650))
-  screen.blit(imageText, (215,700))
-  screen.blit(imageSizeText, (220,730))
-  screen.blit(colorText, (0,770))
-  screen.blit(redText, (130,770))
-  screen.blit(greenText, (185,770))
-  screen.blit(blueText, (240,770))
-  screen.blit(opacityText, (295,770))
+    def load_settings(self):  # Loads the settings from the settings file.
+        with open(self.settings_file_name, "r") as settingsFile:
+            try:
+                self.settings["main_size"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["current_game"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["bg_red"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["bg_green"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["bg_blue"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["bg_alpha"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["display_x"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+                self.settings["display_y"] = int(settingsFile.readline().split(":")[1].strip(" ").strip("\n"))
+            except IndexError:
+                self.write_settings()
 
-  plusClick = screen.blit(plus, (100,740))
-  minusClick = screen.blit(minus, (50,740))
-  leftClick = screen.blit(left, (200,660))
-  rightClick = screen.blit(right, (250,660))
+    # Used when the program needs to update the settings file.
+    def write_settings(self):
+        with open("settings.txt", "w") as f:
+            f.write(f"size: {self.settings['main_size']}\n")
+            f.write(f"game: {self.settings['current_game']}\n")
+            f.write(f"bgred: {self.settings['bg_red']}\n")
+            f.write(f"bggreen: {self.settings['bg_green']}\n")
+            f.write(f"bgblue: {self.settings['bg_blue']}\n")
+            f.write(f"opacity: {self.settings['bg_alpha']}\n")
+            f.write(f"imgx: {self.settings['display_x']}\n")
+            f.write(f"imgy: {self.settings['display_y']}\n")
 
-  outputxminus = screen.blit(smallminus, (220,760))
-  outputxplus = screen.blit(smallplus, (240,760))
+    def handle_game_change(self, game_index, my_pos):
+        if self.previous_game_arrow.collidepoint(my_pos):  # Goes to the previous directory in the folder.
+            game_index -= 1
+            if game_index < 0:  # If the index is too low, and if so loops back to the end of the list.
+                game_index = len(self.game_names) - 1
 
-  outputyminus = screen.blit(smallminus, (300,760))
-  outputyplus = screen.blit(smallplus, (320,760))
+        elif self.next_game_arrow.collidepoint(my_pos):  # Goes to the next directory in the folder.
+            game_index += 1
+            if game_index > len(self.game_names) - 1:
+                # Checks if the index is at the end of the list, and if so loops to the beginning of the list.
+                game_index = 0
+        else:
+            return False
+        self.settings["current_game"] = game_index
+        new_game = self.game_names[game_index]  # Changes the directory that the program is taking the characters from
 
-  redminus = screen.blit(smallminus, (130,800))
-  redplus = screen.blit(smallplus, (160,800))
-  
-  greenminus = screen.blit(smallminus, (185,800))
-  greenplus = screen.blit(smallplus, (210,800))
-  
-  blueminus = screen.blit(smallminus, (240,800))
-  blueplus = screen.blit(smallplus, (270,800))
+        # Recreates the lists the program uses to now have the characters from the specified game.
+        self.current_game_folder = new_game
+        self.rebuild_character_matrix(new_game)
+        self.write_settings()
+        return True
 
-  opacityminus = screen.blit(smallminus, (295,800))
-  opacityplus = screen.blit(smallplus, (325,800))
+    def rebuild_character_matrix(self, new_game):
+        self.selected_characters = []
+        self.resized_images = {}
+        self.character_matrix = [[]]
+        max_images_in_row = self.window_width / self.picture_size
+        folder_content = os.listdir(new_game)
 
-  dead = open(directory+'/dead.txt').readlines()
-  for i in range(len(dead)):
-    dead[i] = dead[i].rstrip("\n")
-  two_d = [[]]
-  deadimg = []
-  screenChange(displayx)
+        char_dict = dict()
 
-  #Goes through the list of characters and displays them as they are organized in the 2D array..
-  for j in range(len(characterList)):
-    for i in range(len(characterList[j])):
-      characterImages[j][i].collide = screen.blit(characterImages[j][i].img,[size*i,j*size]) #This sets the collide attribute of the current character to the character's location and displays them there
-      collidelist.append(characterImages[j][i])
-      if characterImages[j][i].selected == True: #Displays an "x" over any character who has been marked as dead.
-        screen.blit(rip,[size*i,j*size])
+        for file in folder_content:  # Add all characters for the current game to a dictionary
+            if file.endswith(".png") or file.endswith(".jpg"):
+                image = pygame.image.load(f'{new_game}/{file}')
+                char_dict[file] = Char(image, file)
 
-  for j in range(len(two_d)): # Displays the dead characters in the same order as the 2D array.
-    for i in range(len(two_d[j])):
-      displayScreen.blit(deadimg[j][i],[mainSize*i,j*mainSize])
-  pygame.display.flip()
+        with open(f'{new_game}/dead.txt', "r") as deaths:  # Mark the characters that are in the death file as dead
+            for char in deaths:
+                char = char.strip("\n")
+                if char == "":
+                    continue
 
-  if saveImage:
-    while True:
-      try:
-        saveImage = False #prevents the image from saving again until another change is made
-        pygame.image.save(displayScreen,"output.png")
-        break
-      except pygame.error: #In case the program tries to overwrite an image that is still being saved
-        continue
-      
-pygame.quit()
+                char_dict[char].selected = True
+                self.selected_characters.append(char_dict[char].name)
+
+        z = 0  # Represents the row number in the character_matrix array.
+        for iterator, (k, char) in enumerate(char_dict.items()):  # Convert the dict into a 2d array
+            if iterator % max_images_in_row == 0 and iterator != 0:
+                z += 1
+                self.character_matrix.append([])
+            self.character_matrix[z].append(char)
+
+        self.char_dict = char_dict
+        self.show_characters_in_window(self.screen)
+
+    # Used for the plus and minus icons.
+    def handle_plus_minus(self, setting, add, lower_bound, upper_bound):
+        x = int(self.settings[setting])
+        change = 1
+        if self.control_held and self.shift_held:
+            change = 100
+        elif self.control_held:
+            change = 10
+        elif self.shift_held:
+            change = 50
+
+        x = x + change if add else x - change
+
+        if x < lower_bound:
+            x = lower_bound
+        elif x > upper_bound:
+            x = upper_bound
+
+        self.settings[setting] = x
+        self.write_settings()
+        return True
+
+
+def main():
+    pygame.init()
+    a = Application()
+    a.loop()
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
