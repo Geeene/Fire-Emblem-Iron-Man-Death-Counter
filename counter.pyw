@@ -194,9 +194,9 @@ class Application(object):
 
         if self.plusClick.collidepoint(clicked_pos):
             event_handled = self.handle_plus_minus("main_size", True, 1, 1000)
-            self.resized_images = []  # empty the resized images cache, the image size has changed.
+            self.resized_images = {}  # empty the resized images cache, the image size has changed.
         elif self.minusClick.collidepoint(clicked_pos):
-            self.resized_images = []  # empty the resized images cache, the image size has changed.
+            self.resized_images = {}  # empty the resized images cache, the image size has changed.
             event_handled = self.handle_plus_minus("main_size", False, 1, 1000)
         elif self.output_x_plus.collidepoint(clicked_pos):
             event_handled = self.handle_plus_minus("display_x", True, 1, 2500)
